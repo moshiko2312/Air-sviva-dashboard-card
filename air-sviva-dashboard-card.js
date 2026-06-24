@@ -1246,10 +1246,12 @@ class AirSvivaDashboardCard extends HTMLElement {
           box-shadow:0 12px 20px rgba(95,115,135,.16), inset 0 1px 0 rgba(255,255,255,.9);
           border:1px solid rgba(255,255,255,.9);
           display:grid;
-          grid-template-columns:minmax(128px, auto) minmax(0, 1fr) 82px;
-          grid-template-areas:"readout info visual";
+          grid-template-columns:minmax(0, 1fr) 82px;
+          grid-template-areas:
+            "readout visual"
+            "info visual";
           gap:12px;
-          align-items:center;
+          align-items:start;
           padding:16px;
           overflow:visible;
           direction:ltr;
@@ -1271,10 +1273,11 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         .metric-readout {
           grid-area:readout;
-          min-width:128px;
+          min-width:0;
+          width:100%;
           display:grid;
           gap:10px;
-          align-items:center;
+          align-items:start;
           justify-items:start;
           direction:ltr;
         }
@@ -1296,7 +1299,7 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         .metric-number small {
           color:#304861;
-          font-size:20px;
+          font-size:18px;
           font-weight:860;
           line-height:1.1;
           letter-spacing:-.01em;
@@ -1313,13 +1316,14 @@ class AirSvivaDashboardCard extends HTMLElement {
           min-width:0;
           text-align:right;
           direction:rtl;
+          align-self:end;
         }
 
         .metric-info b {
           display:block;
-          direction:ltr;
-          unicode-bidi:isolate;
-          font-size:24px;
+          direction:rtl;
+          unicode-bidi:plaintext;
+          font-size:20px;
           font-weight:950;
           line-height:1.05;
           color:#18304b;
@@ -1330,9 +1334,9 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         .metric-info span {
           display:block;
-          margin-top:6px;
+          margin-top:4px;
           color:#52657a;
-          font-size:15px;
+          font-size:13px;
           line-height:1.25;
           font-weight:650;
           white-space:nowrap;
@@ -1539,14 +1543,16 @@ class AirSvivaDashboardCard extends HTMLElement {
 
           .metric,
           .metric.weather-wide {
-            grid-template-columns:minmax(118px, auto) minmax(0, 1fr) 72px;
-            grid-template-areas:"readout info visual";
+            grid-template-columns:minmax(0, 1fr) 72px;
+            grid-template-areas:
+              "readout visual"
+              "info visual";
             min-height:108px;
             padding:13px;
           }
 
           .metric-readout {
-            min-width:118px;
+            min-width:0;
           }
 
           .metric-info b {
@@ -1580,7 +1586,7 @@ class AirSvivaDashboardCard extends HTMLElement {
           }
 
           .metric-visual {
-            grid-row:1 / 3;
+            grid-area:1 / 1 / 3 / 2;
           }
 
           .metric-info b {
