@@ -4,7 +4,7 @@ Custom Home Assistant Lovelace card for displaying Air Sviva station data in a r
 
 ## Preview
 
-![Air Sviva Dashboard Preview](assets/preview.jpeg)
+![Air Sviva Dashboard Preview](assets/preview.jpg)
 
 ## Features
 
