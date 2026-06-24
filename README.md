@@ -1,6 +1,11 @@
 # Air Sviva Dashboard Card
 
+[![Latest Release](https://img.shields.io/github/v/release/moshiko2312/Air-sviva-dashboard-card)](https://github.com/moshiko2312/Air-sviva-dashboard-card/releases)
+
 Custom Home Assistant Lovelace card for displaying Air Sviva station data in a rich dashboard layout.
+
+- Latest Release: https://github.com/moshiko2312/Air-sviva-dashboard-card/releases/latest
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Preview
 
