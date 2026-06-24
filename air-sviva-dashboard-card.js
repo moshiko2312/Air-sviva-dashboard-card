@@ -225,6 +225,10 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
           margin-top:4px;
         }
 
+        .grid > label:last-child:nth-child(odd) {
+          grid-column:1 / -1;
+        }
+
         label {
           display:flex;
           flex-direction:column;
@@ -1488,6 +1492,10 @@ class AirSvivaDashboardCard extends HTMLElement {
           display:grid;
           grid-template-columns:repeat(2, minmax(0, 1fr));
           gap:14px;
+        }
+
+        .metrics > .metric:last-child:nth-child(odd) {
+          grid-column:1 / -1;
         }
 
         .metric {
