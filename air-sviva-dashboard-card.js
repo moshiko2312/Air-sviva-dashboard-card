@@ -69,7 +69,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
   }
 
   setConfig(config) {
-    this.config = {
+    const merged = {
       title: "רמת איכות אוויר",
       station_name: "",
       entity_prefix: "",
@@ -79,6 +79,8 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
       show_footer: true,
       show_legend: true,
       show_weather: true,
+      show_extra_pollutants: true,
+      show_extra_weather: true,
       nav_button_label: "",
       nav_button_path: "",
       show_back_button: true,
@@ -87,7 +89,19 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
       max_width: "2200px",
       ...config,
     };
-    this.render();
+
+    const wasRendered = !!this._renderedOnce;
+    this.config = merged;
+
+    if (!wasRendered) {
+      this.render();
+      return;
+    }
+
+    // Home Assistant may call setConfig frequently while the user types.
+    // Avoid full re-render after first paint to preserve caret/focus.
+    this.syncFormWithConfig();
+    this.populateRouteSelects();
   }
 
   configChanged(config) {
@@ -100,7 +114,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
 
   updateValue(key, value, shouldRender = false) {
     const next = { ...this.config };
-    if (["full_height", "show_scene", "show_footer", "show_legend", "show_weather"].includes(key)) {
+    if (["full_height", "show_scene", "show_footer", "show_legend", "show_weather", "show_extra_pollutants", "show_extra_weather"].includes(key)) {
       next[key] = value;
     } else if (key === "station_id") {
       if (value === "") delete next.station_id;
@@ -118,6 +132,27 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
     if (shouldRender) this.render();
   }
 
+  syncFormWithConfig() {
+    if (!this.shadowRoot) return;
+
+    const active = this.shadowRoot.activeElement;
+    const activeKey = active?.dataset?.key || "";
+
+    this.shadowRoot.querySelectorAll("input[data-key]").forEach((input) => {
+      const key = input.dataset.key;
+      if (!key) return;
+      if (key === activeKey && input === active) return;
+
+      if (input.type === "checkbox") {
+        input.checked = !!this.config?.[key];
+        return;
+      }
+
+      const nextValue = this.config?.[key] ?? "";
+      if (String(input.value) !== String(nextValue)) input.value = nextValue;
+    });
+  }
+
   render() {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     const c = this.config || {};
@@ -128,61 +163,100 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
           display:block;
           direction:rtl;
           font-family:var(--primary-font-family, system-ui);
+          --ed-bg-1:#1f2430;
+          --ed-bg-2:#131722;
+          --ed-glass:rgba(255,255,255,.08);
+          --ed-line:rgba(255,255,255,.12);
+          --ed-text:#f2f6ff;
+          --ed-muted:rgba(224,232,252,.74);
         }
 
         .editor {
-          padding:16px;
-          border-radius:22px;
-          background:linear-gradient(145deg,#25262a,#151619);
-          color:#fff;
-          border:1px solid rgba(255,255,255,.12);
+          padding:18px;
+          border-radius:24px;
+          background:
+            radial-gradient(circle at 14% 12%, rgba(114,146,255,.18), transparent 38%),
+            radial-gradient(circle at 88% 86%, rgba(59,198,151,.11), transparent 36%),
+            linear-gradient(145deg,var(--ed-bg-1),var(--ed-bg-2));
+          color:var(--ed-text);
+          border:1px solid var(--ed-line);
+          box-shadow:0 22px 38px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.12);
+          position:relative;
+          overflow:hidden;
+        }
+
+        .editor:before {
+          content:"";
+          position:absolute;
+          inset:10px;
+          border-radius:18px;
+          border:1px solid rgba(255,255,255,.06);
+          pointer-events:none;
         }
 
         .head {
           display:flex;
           align-items:center;
-          gap:12px;
-          margin-bottom:14px;
+          justify-content:center;
+          gap:10px;
+          margin-bottom:16px;
+          text-align:center;
+          padding:4px 8px 10px;
+          border-bottom:1px solid rgba(255,255,255,.08);
         }
 
         .head img {
-          width:42px;
-          height:42px;
+          width:30px;
+          height:30px;
           object-fit:contain;
+          opacity:.95;
         }
 
         .head b {
-          font-size:20px;
+          font-size:clamp(20px, 2.6vw, 28px);
+          font-weight:900;
+          letter-spacing:-.01em;
         }
 
         .grid {
           display:grid;
           grid-template-columns:repeat(2,minmax(0,1fr));
-          gap:10px;
+          gap:12px;
+          margin-top:4px;
         }
 
         label {
           display:flex;
           flex-direction:column;
-          gap:7px;
-          padding:11px;
-          border-radius:16px;
-          background:rgba(255,255,255,.06);
-          border:1px solid rgba(255,255,255,.08);
+          gap:8px;
+          padding:12px;
+          border-radius:18px;
+          background:var(--ed-glass);
+          border:1px solid rgba(255,255,255,.10);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 8px 14px rgba(0,0,0,.16);
         }
 
         label span {
-          color:rgba(255,255,255,.7);
+          color:var(--ed-muted);
           font-size:13px;
+          font-weight:700;
         }
 
         input, select {
-          border:1px solid rgba(255,255,255,.14);
-          border-radius:12px;
-          padding:10px;
-          background:rgba(0,0,0,.24);
-          color:#fff;
+          border:1px solid rgba(255,255,255,.16);
+          border-radius:13px;
+          padding:11px;
+          background:linear-gradient(145deg, rgba(15,20,31,.72), rgba(20,27,42,.70));
+          color:var(--ed-text);
           font-family:inherit;
+          font-weight:650;
+          outline:none;
+          transition:border-color .15s ease, box-shadow .15s ease;
+        }
+
+        input:focus, select:focus {
+          border-color:rgba(130,173,255,.66);
+          box-shadow:0 0 0 3px rgba(102,145,255,.18);
         }
 
         select option {
@@ -193,11 +267,13 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
           flex-direction:row;
           align-items:center;
           justify-content:space-between;
+          min-height:58px;
         }
 
         .toggle input {
           width:auto;
-          transform:scale(1.15);
+          transform:scale(1.2);
+          accent-color:#8fb8ff;
         }
 
         @media(max-width:700px) {
@@ -295,6 +371,16 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
           </label>
 
           <label class="toggle">
+            <span>הצג מזהמים נוספים (אוטומטי)</span>
+            <input data-key="show_extra_pollutants" type="checkbox" ${c.show_extra_pollutants !== false ? "checked" : ""}>
+          </label>
+
+          <label class="toggle">
+            <span>הצג מדדי מזג אוויר נוספים (אוטומטי)</span>
+            <input data-key="show_extra_weather" type="checkbox" ${c.show_extra_weather !== false ? "checked" : ""}>
+          </label>
+
+          <label class="toggle">
             <span>הצג הערה תחתונה</span>
             <input data-key="show_footer" type="checkbox" ${c.show_footer !== false ? "checked" : ""}>
           </label>
@@ -351,6 +437,8 @@ class AirSvivaDashboardCard extends HTMLElement {
       show_footer: true,
       show_legend: true,
       show_weather: true,
+      show_extra_pollutants: true,
+      show_extra_weather: true,
       nav_button_label: "",
       nav_button_path: "",
       show_back_button: true,
@@ -372,7 +460,7 @@ class AirSvivaDashboardCard extends HTMLElement {
       return `sensor.sviva_station_${stationId}`;
     }
 
-    const suffixPattern = /_(no|no2|nox|o3|pm10|rain|rh|so2|temp)$/i;
+    const suffixPattern = /_(no|no2|nox|o3|pm10|pm25|pm2_5|co|rain|rh|so2|temp|ws|wds|wd|wdd|pressure|bp|sr)$/i;
     const candidates = {};
 
     Object.keys(hass.states || {}).forEach((entityId) => {
@@ -397,10 +485,20 @@ class AirSvivaDashboardCard extends HTMLElement {
       nox: `${prefix}_nox`,
       o3: `${prefix}_o3`,
       pm10: `${prefix}_pm10`,
+      pm25: `${prefix}_pm25`,
+      pm2_5: `${prefix}_pm2_5`,
+      co: `${prefix}_co`,
       rain: `${prefix}_rain`,
       rh: `${prefix}_rh`,
       so2: `${prefix}_so2`,
       temp: `${prefix}_temp`,
+      ws: `${prefix}_ws`,
+      wds: `${prefix}_wds`,
+      wd: `${prefix}_wd`,
+      wdd: `${prefix}_wdd`,
+      pressure: `${prefix}_pressure`,
+      bp: `${prefix}_bp`,
+      sr: `${prefix}_sr`,
     };
   }
 
@@ -444,26 +542,155 @@ class AirSvivaDashboardCard extends HTMLElement {
       o3: "O₃",
       pm10: "PM10",
       so2: "SO₂",
+      pm25: "PM2.5",
+      pm2_5: "PM2.5",
+      co: "CO",
     }[key] || key;
   }
 
-  metricItems(e) {
+  normalizeSuffix(value) {
+    return String(value || "").toLowerCase().replace(/[\.\s-]+/g, "_");
+  }
+
+  firstExistingEntity(hass, candidates) {
+    for (const candidate of candidates || []) {
+      if (!candidate) continue;
+      const resolved = this.resolveEntity(hass, candidate);
+      if (hass.states?.[resolved]) return resolved;
+    }
+    return "";
+  }
+
+  unitForEntity(hass, entityId, fallback = "") {
+    const resolved = this.resolveEntity(hass, entityId);
+    return hass.states?.[resolved]?.attributes?.unit_of_measurement || fallback;
+  }
+
+  extraSensorMeta(suffix) {
+    const key = this.normalizeSuffix(suffix);
+    return {
+      pm25: { name: "PM2.5", desc: "חלקיקים עדינים", category: "pollutant", kind: "green", unit: "µg/m³", good: 25, mid: 50, low: 100, bad: 250 },
+      pm2_5: { name: "PM2.5", desc: "חלקיקים עדינים", category: "pollutant", kind: "green", unit: "µg/m³", good: 25, mid: 50, low: 100, bad: 250 },
+      co: { name: "CO", desc: "פחמן חד־חמצני", category: "pollutant", kind: "gray", unit: "ppm", good: 4, mid: 9, low: 15, bad: 30 },
+      ws: { name: "WS", desc: "מהירות רוח", category: "weather", kind: "blue" },
+      wds: { name: "WS", desc: "מהירות רוח", category: "weather", kind: "blue" },
+      wd: { name: "WD", desc: "כיוון רוח", category: "weather", kind: "blue", unit: "°" },
+      wdd: { name: "WD", desc: "כיוון רוח", category: "weather", kind: "blue", unit: "°" },
+      pressure: { name: "Pressure", desc: "לחץ ברומטרי", category: "weather", kind: "gray" },
+      bp: { name: "Pressure", desc: "לחץ ברומטרי", category: "weather", kind: "gray" },
+      sr: { name: "Solar", desc: "קרינה סולארית", category: "weather", kind: "yellow" },
+    }[key] || null;
+  }
+
+  buildBasePollutantItems(hass, e) {
+    const pm25Entity = this.firstExistingEntity(hass, [e.pm25, e.pm2_5]);
+    const coEntity = this.firstExistingEntity(hass, [e.co]);
+
     return [
       { key: "pm10", name: "PM10", desc: "חלקיקים נשימים", entity: e.pm10, unit: "µg/m³", good: 50, mid: 100, low: 200, bad: 400, kind: "green" },
+      { key: "pm25", name: "PM2.5", desc: "חלקיקים עדינים", entity: pm25Entity, unit: "µg/m³", good: 25, mid: 50, low: 100, bad: 250, kind: "green" },
       { key: "o3", name: "O₃", desc: "אוזון", entity: e.o3, unit: "µg/m³", good: 100, mid: 180, low: 240, bad: 400, kind: "blue" },
       { key: "so2", name: "SO₂", desc: "גופרית דו־חמצנית", entity: e.so2, unit: "µg/m³", good: 20, mid: 80, low: 250, bad: 400, kind: "yellow" },
       { key: "no2", name: "NO₂", desc: "חנקן דו־חמצני", entity: e.no2, unit: "µg/m³", good: 40, mid: 100, low: 200, bad: 400, kind: "red" },
       { key: "nox", name: "NOₓ", desc: "תחמוצות חנקן", entity: e.nox, unit: "µg/m³", good: 40, mid: 100, low: 200, bad: 400, kind: "red" },
       { key: "no", name: "NO", desc: "חנקן חד־חמצני", entity: e.no, unit: "µg/m³", good: 40, mid: 100, low: 200, bad: 400, kind: "gray" },
+      { key: "co", name: "CO", desc: "פחמן חד־חמצני", entity: coEntity, unit: this.unitForEntity(hass, coEntity, "ppm"), good: 4, mid: 9, low: 15, bad: 30, kind: "gray" },
     ];
   }
 
-  weatherItems(e) {
+  buildBaseWeatherItems(hass, e) {
+    const wsEntity = this.firstExistingEntity(hass, [e.ws, e.wds]);
+    const wdEntity = this.firstExistingEntity(hass, [e.wd, e.wdd]);
+    const pressureEntity = this.firstExistingEntity(hass, [e.pressure, e.bp]);
+
     return [
-      { key: "temp", name: "טמפ׳", desc: "טמפרטורה", entity: e.temp, unit: "°C", kind: "orange" },
-      { key: "rh", name: "לחות", desc: "לחות יחסית", entity: e.rh, unit: "%", kind: "blue" },
-      { key: "rain", name: "גשם", desc: "משקעים", entity: e.rain, unit: "mm", kind: "blue" },
+      { key: "temp", name: "טמפ׳", desc: "טמפרטורה", entity: e.temp, unit: this.unitForEntity(hass, e.temp, "°C"), kind: "orange" },
+      { key: "rh", name: "לחות", desc: "לחות יחסית", entity: e.rh, unit: this.unitForEntity(hass, e.rh, "%"), kind: "blue" },
+      { key: "rain", name: "גשם", desc: "משקעים", entity: e.rain, unit: this.unitForEntity(hass, e.rain, "mm"), kind: "blue" },
+      { key: "ws", name: "WS", desc: "מהירות רוח", entity: wsEntity, unit: this.unitForEntity(hass, wsEntity, "m/s"), kind: "blue" },
+      { key: "wd", name: "WD", desc: "כיוון רוח", entity: wdEntity, unit: this.unitForEntity(hass, wdEntity, "°"), kind: "blue" },
+      { key: "pressure", name: "Pressure", desc: "לחץ ברומטרי", entity: pressureEntity, unit: this.unitForEntity(hass, pressureEntity, "hPa"), kind: "gray" },
     ];
+  }
+
+  autoDetectedItems(hass, prefix, explicitSuffixes, category) {
+    const items = [];
+    const known = new Set((explicitSuffixes || []).map((s) => this.normalizeSuffix(s)));
+    const prefixStart = `${prefix}_`;
+
+    Object.keys(hass.states || {}).forEach((entityId) => {
+      if (!entityId.startsWith(prefixStart)) return;
+      const suffixRaw = entityId.slice(prefixStart.length);
+      const suffix = this.normalizeSuffix(suffixRaw);
+      if (!suffix || known.has(suffix)) return;
+
+      const meta = this.extraSensorMeta(suffix);
+      const inferredCategory = meta?.category || (/temp|rh|rain|ws|wds|wd|wdd|wind|pressure|bp|sr|solar/.test(suffix) ? "weather" : "pollutant");
+      if (inferredCategory !== category) return;
+
+      const stateObj = hass.states?.[entityId];
+      const unit = stateObj?.attributes?.unit_of_measurement || meta?.unit || "";
+      const friendly = String(stateObj?.attributes?.friendly_name || "").trim();
+      const fallbackName = suffix.toUpperCase().replace(/_/g, " ");
+
+      if (category === "weather") {
+        items.push({
+          key: suffix,
+          name: meta?.name || fallbackName,
+          desc: meta?.desc || friendly || "מדד מזג אוויר",
+          entity: entityId,
+          unit,
+          kind: meta?.kind || "blue",
+        });
+      } else {
+        items.push({
+          key: suffix,
+          name: meta?.name || fallbackName,
+          desc: meta?.desc || friendly || "מזהם אוויר",
+          entity: entityId,
+          unit,
+          kind: meta?.kind || "gray",
+          good: meta?.good ?? 50,
+          mid: meta?.mid ?? 100,
+          low: meta?.low ?? 200,
+          bad: meta?.bad ?? 400,
+        });
+      }
+    });
+
+    return items;
+  }
+
+  metricItems(hass, e, prefix) {
+    const base = this.buildBasePollutantItems(hass, e);
+    const extras = this.config.show_extra_pollutants === false
+      ? []
+      : this.autoDetectedItems(hass, prefix, Object.keys(e), "pollutant");
+
+    const all = [...base, ...extras];
+    const deduped = new Map();
+    all.forEach((item) => {
+      const id = this.resolveEntity(hass, item.entity);
+      if (!id || !hass.states?.[id]) return;
+      if (!deduped.has(item.key)) deduped.set(item.key, { ...item, entity: id });
+    });
+    return Array.from(deduped.values());
+  }
+
+  weatherItems(hass, e, prefix) {
+    const base = this.buildBaseWeatherItems(hass, e);
+    const extras = this.config.show_extra_weather === false
+      ? []
+      : this.autoDetectedItems(hass, prefix, Object.keys(e), "weather");
+
+    const all = [...base, ...extras];
+    const deduped = new Map();
+    all.forEach((item) => {
+      const id = this.resolveEntity(hass, item.entity);
+      if (!id || !hass.states?.[id]) return;
+      if (!deduped.has(item.key)) deduped.set(item.key, { ...item, entity: id });
+    });
+    return Array.from(deduped.values());
   }
 
   scoreForItem(value, item) {
@@ -479,7 +706,7 @@ class AirSvivaDashboardCard extends HTMLElement {
   calcAqi(hass, e) {
     let worst = null;
 
-    this.metricItems(e).forEach((item) => {
+    this.metricItems(hass, e, this.detectPrefix(hass)).forEach((item) => {
       const value = this.num(hass, item.entity);
       if (value === null) return;
       const score = this.scoreForItem(value, item);
@@ -576,7 +803,7 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         <div class="metric-visual">
           <div class="molecule weather-icon ${item.kind}">
-            ${item.key === "temp" ? "🌡️" : item.key === "rh" ? "💧" : "🌧️"}
+            ${item.key === "temp" ? "🌡️" : item.key === "rh" ? "💧" : item.key === "rain" ? "🌧️" : item.key === "ws" ? "💨" : item.key === "wd" ? "🧭" : item.key === "pressure" ? "⏲️" : item.key === "sr" ? "☀️" : "🌤️"}
           </div>
         </div>
       </article>
@@ -654,7 +881,9 @@ class AirSvivaDashboardCard extends HTMLElement {
 
     const e = this.entityMap(prefix);
     const aqi = this.calcAqi(hass, e);
-    const dominantItem = this.metricItems(e).find((item) => item.key === aqi.pollutant) || null;
+    const allMetricItems = this.metricItems(hass, e, prefix);
+    const allWeatherItems = this.weatherItems(hass, e, prefix);
+    const dominantItem = allMetricItems.find((item) => item.key === aqi.pollutant) || null;
     const dominantLabel = dominantItem ? dominantItem.name : "—";
     const dominantValue = dominantItem ? this.value(hass, dominantItem.entity) : "—";
     const stationId = this.stationIdFromPrefix(prefix);
@@ -663,8 +892,8 @@ class AirSvivaDashboardCard extends HTMLElement {
     const deg = this.needleAngleForScore(aqi.score);
     const maxWidth = this.config.max_width || "2200px";
 
-    const pollutantMetrics = this.metricItems(e).map((item) => this.metricHtml(hass, item)).join("");
-    const weatherMetrics = this.config.show_weather === false ? "" : this.weatherItems(e).map((item) => this.weatherHtml(hass, item)).join("");
+    const pollutantMetrics = allMetricItems.map((item) => this.metricHtml(hass, item)).join("");
+    const weatherMetrics = this.config.show_weather === false ? "" : allWeatherItems.map((item) => this.weatherHtml(hass, item)).join("");
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -733,7 +962,7 @@ class AirSvivaDashboardCard extends HTMLElement {
           width:100%; max-width:${maxWidth};
           min-height:720px;
           border-radius:38px;
-          padding:34px;
+          padding:clamp(18px, 2.2vw, 34px);
           position:relative;
           overflow:hidden;
           background:
@@ -758,7 +987,8 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         .top {
           display:grid;
-          grid-template-columns:132px minmax(0, 1fr) 230px;
+          grid-template-columns:minmax(92px, 124px) minmax(0, 1fr) minmax(170px, 218px);
+          grid-template-areas:"logo intro refresh";
           gap:24px;
           align-items:center;
           margin-bottom:24px;
@@ -767,6 +997,7 @@ class AirSvivaDashboardCard extends HTMLElement {
         }
 
         .logo-box {
+          grid-area:logo;
           width:126px;
           height:126px;
           border-radius:28px;
@@ -795,14 +1026,20 @@ class AirSvivaDashboardCard extends HTMLElement {
         }
 
         .intro {
+          grid-area:intro;
           text-align:center;
           justify-self:center;
           width:100%;
+          background:linear-gradient(160deg, rgba(255,255,255,.50), rgba(225,236,246,.24));
+          border:1px solid rgba(255,255,255,.62);
+          border-radius:22px;
+          padding:14px 18px;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.84), 0 8px 16px rgba(83,108,132,.09);
         }
 
         .intro h1 {
           margin:0 auto 8px;
-          font-size:34px;
+          font-size:clamp(30px, 3vw, 52px);
           line-height:1;
           letter-spacing:-.03em;
           color:#1b2e49;
@@ -811,13 +1048,14 @@ class AirSvivaDashboardCard extends HTMLElement {
         .intro p {
           max-width:760px;
           margin:0 auto;
-          line-height:1.5;
+          line-height:1.42;
           color:#2c405a;
-          font-weight:520;
-          font-size:15px;
+          font-weight:600;
+          font-size:clamp(13px, 1.1vw, 16px);
         }
 
         .refresh {
+          grid-area:refresh;
           border-radius:22px;
           padding:14px 16px;
           background:linear-gradient(158deg,#f8fcff,#dceaf4);
@@ -905,10 +1143,23 @@ class AirSvivaDashboardCard extends HTMLElement {
         }
 
         .panel {
+          position:relative;
           border-radius:24px;
           background:linear-gradient(156deg,rgba(255,255,255,.86),rgba(225,237,246,.80));
           border:1px solid rgba(255,255,255,.88);
           box-shadow:var(--air-soft-shadow), inset 0 1px 0 rgba(255,255,255,.9);
+        }
+
+        .panel:before {
+          content:"";
+          position:absolute;
+          left:14px;
+          right:14px;
+          top:10px;
+          height:26px;
+          border-radius:16px;
+          background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,0));
+          pointer-events:none;
         }
 
         .gauge-panel {
@@ -1229,17 +1480,18 @@ class AirSvivaDashboardCard extends HTMLElement {
           text-align:center;
           font-weight:850;
           font-size:20px;
-          margin-bottom:20px;
+          margin-bottom:16px;
           color:#253e5b;
         }
 
         .metrics {
           display:grid;
           grid-template-columns:repeat(2, minmax(0, 1fr));
-          gap:18px;
+          gap:14px;
         }
 
         .metric {
+          position:relative;
           min-height:118px;
           border-radius:22px;
           background:linear-gradient(160deg,#f8fcff,#dbe8f2);
@@ -1256,6 +1508,16 @@ class AirSvivaDashboardCard extends HTMLElement {
           overflow:visible;
           direction:ltr;
           transition:transform .18s ease, box-shadow .18s ease;
+        }
+
+        .metric:before {
+          content:"";
+          position:absolute;
+          inset:1px 1px auto 1px;
+          height:38%;
+          border-radius:20px;
+          background:linear-gradient(180deg, rgba(255,255,255,.44), rgba(255,255,255,0));
+          pointer-events:none;
         }
 
         .metric:hover {
@@ -1474,9 +1736,57 @@ class AirSvivaDashboardCard extends HTMLElement {
           }
         }
 
+        @media (max-width:1300px) {
+          .top {
+            grid-template-columns:minmax(84px, 104px) minmax(0, 1fr) minmax(154px, 196px);
+            gap:14px;
+          }
+
+          .logo-box {
+            width:104px;
+            height:104px;
+            border-radius:24px;
+          }
+
+          .logo-box img {
+            width:78px;
+            height:78px;
+          }
+
+          .intro {
+            padding:10px 14px;
+          }
+        }
+
+        @media (max-width:1180px) {
+          .top {
+            grid-template-columns:1fr auto;
+            grid-template-areas:
+              "intro intro"
+              "refresh logo";
+            align-items:start;
+            gap:12px;
+          }
+
+          .intro {
+            max-width:unset;
+          }
+
+          .logo-box {
+            justify-self:end;
+          }
+
+          .refresh {
+            justify-self:start;
+          }
+        }
+
         @media (max-width:980px) {
           .top {
             grid-template-columns:72px 1fr;
+            grid-template-areas:
+              "logo intro"
+              "refresh refresh";
           }
 
           .logo-box {
