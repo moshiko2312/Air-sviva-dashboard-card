@@ -2,6 +2,10 @@
 
 Custom Home Assistant Lovelace card for displaying Air Sviva station data in a rich dashboard layout.
 
+## Preview
+
+![Air Sviva Dashboard Preview](assets/preview.jpeg)
+
 ## Features
 
 - AQI gauge with dominant pollutant logic
