@@ -1,5 +1,5 @@
 const AIR_SVIVA_LOGO = "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20220%2090%27%3E%0A%3Cdefs%3E%3ClinearGradient%20id%3D%27g1%27%20x1%3D%270%27%20x2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23f6a623%27/%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23ffbd3d%27/%3E%3C/linearGradient%3E%3ClinearGradient%20id%3D%27g2%27%20x1%3D%270%27%20x2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%2300843d%27/%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%2318a558%27/%3E%3C/linearGradient%3E%3C/defs%3E%0A%3Cpath%20d%3D%27M17%2052%20C36%2023%2C70%2018%2C107%2037%20C80%2051%2C49%2063%2C17%2052%20Z%27%20fill%3D%27url%28%23g1%29%27/%3E%0A%3Cpath%20d%3D%27M109%2037%20C143%2016%2C185%2018%2C206%2051%20C174%2065%2C139%2056%2C109%2037%20Z%27%20fill%3D%27url%28%23g2%29%27/%3E%0A%3Cpath%20d%3D%27M25%2052%20C58%2049%2C85%2043%2C110%2037%20C137%2043%2C166%2050%2C198%2052%27%20fill%3D%27none%27%20stroke%3D%27%23ffffff%27%20stroke-opacity%3D%27.75%27%20stroke-width%3D%275%27%20stroke-linecap%3D%27round%27/%3E%0A%3Cpath%20d%3D%27M110%2038%20L110%2070%27%20stroke%3D%27%23ffffff%27%20stroke-opacity%3D%27.72%27%20stroke-width%3D%275%27%20stroke-linecap%3D%27round%27/%3E%0A%3C/svg%3E";
-const AIR_SVIVA_BUILD = "2026-06-24-3";
+const AIR_SVIVA_BUILD = "2026-06-26-2";
 
 class AirSvivaDashboardCardEditor extends HTMLElement {
   set hass(hass) {
@@ -73,6 +73,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
       title: "רמת איכות אוויר",
       station_name: "",
       entity_prefix: "",
+      aqi_entity: "",
       station_id: "",
       full_height: true,
       show_scene: true,
@@ -313,6 +314,11 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
           </label>
 
           <label>
+            <span>חיישן מדד רשמי (אופציונלי)</span>
+            <input data-key="aqi_entity" value="${c.aqi_entity ?? ""}" placeholder="sensor.sviva_station_32_aqi">
+          </label>
+
+          <label>
             <span>רוחב מקסימלי</span>
             <input data-key="max_width" value="${c.max_width ?? "1420px"}" placeholder="1420px / 100%">
           </label>
@@ -435,6 +441,7 @@ class AirSvivaDashboardCard extends HTMLElement {
       title: "רמת איכות אוויר",
       station_name: "",
       entity_prefix: "",
+      aqi_entity: "",
       station_id: "",
       full_height: true,
       show_scene: true,
@@ -459,12 +466,22 @@ class AirSvivaDashboardCard extends HTMLElement {
     const manualPrefix = String(this.config.entity_prefix || "").trim();
     if (manualPrefix) return manualPrefix.replace(/_$/, "");
 
+    const directAqiSuffixPattern = /_(air_quality_index|general_index|israel_aqi|aqi_israel|air_quality|index|aqi)$/i;
+    const configuredAqiEntity = String(this.config.aqi_entity || "").trim();
+    if (configuredAqiEntity && directAqiSuffixPattern.test(configuredAqiEntity)) {
+      return configuredAqiEntity.replace(directAqiSuffixPattern, "");
+    }
+    if (configuredAqiEntity) {
+      const resolvedAqiEntity = this.resolveEntity(hass, configuredAqiEntity);
+      if (hass.states?.[resolvedAqiEntity]) return "__direct_aqi__";
+    }
+
     const stationId = this.config.station_id;
     if (stationId !== "" && stationId !== undefined && stationId !== null) {
       return `sensor.sviva_station_${stationId}`;
     }
 
-    const suffixPattern = /_(no|no2|nox|o3|pm10|pm25|pm2_5|co|rain|rh|so2|temp|ws|wds|wd|wdd|pressure|bp|sr)$/i;
+    const suffixPattern = /_(air_quality_index|general_index|israel_aqi|aqi_israel|air_quality|index|aqi|no|no2|nox|o3|pm10|pm25|pm2_5|co|rain|rh|so2|temp|ws|wds|wd|wdd|pressure|bp|sr)$/i;
     const candidates = {};
 
     Object.keys(hass.states || {}).forEach((entityId) => {
@@ -492,6 +509,13 @@ class AirSvivaDashboardCard extends HTMLElement {
       pm25: `${prefix}_pm25`,
       pm2_5: `${prefix}_pm2_5`,
       co: `${prefix}_co`,
+      aqi: `${prefix}_aqi`,
+      israel_aqi: `${prefix}_israel_aqi`,
+      aqi_israel: `${prefix}_aqi_israel`,
+      index: `${prefix}_index`,
+      general_index: `${prefix}_general_index`,
+      air_quality: `${prefix}_air_quality`,
+      air_quality_index: `${prefix}_air_quality_index`,
       rain: `${prefix}_rain`,
       rh: `${prefix}_rh`,
       so2: `${prefix}_so2`,
@@ -520,12 +544,17 @@ class AirSvivaDashboardCard extends HTMLElement {
     return match ? match[1] : "";
   }
 
+  isInvalidApiValue(value) {
+    return value === -9999 || value === 9999;
+  }
+
   value(hass, entity) {
     const resolved = this.resolveEntity(hass, entity);
     const state = hass.states?.[resolved]?.state;
     if (state === undefined || state === null || state === "unknown" || state === "unavailable") return "—";
 
     const n = Number(String(state).replace(",", "."));
+    if (Number.isFinite(n) && this.isInvalidApiValue(n)) return "—";
     return Number.isFinite(n) ? Math.round(n * 10) / 10 : state;
   }
 
@@ -535,6 +564,7 @@ class AirSvivaDashboardCard extends HTMLElement {
     if (state === undefined || state === null || state === "unknown" || state === "unavailable") return null;
 
     const n = Number(String(state).replace(",", "."));
+    if (Number.isFinite(n) && this.isInvalidApiValue(n)) return null;
     return Number.isFinite(n) ? n : null;
   }
 
@@ -570,12 +600,121 @@ class AirSvivaDashboardCard extends HTMLElement {
     return hass.states?.[resolved]?.attributes?.unit_of_measurement || fallback;
   }
 
+  directAqiEntity(hass, e) {
+    const configured = String(this.config.aqi_entity || "").trim();
+    if (configured) {
+      const resolved = this.resolveEntity(hass, configured);
+      if (hass.states?.[resolved]) return resolved;
+    }
+
+    return this.firstExistingEntity(hass, [
+      e.aqi,
+      e.israel_aqi,
+      e.aqi_israel,
+      e.index,
+      e.general_index,
+      e.air_quality,
+      e.air_quality_index,
+    ]);
+  }
+
+  labelForIsraelAqi(score) {
+    if (!Number.isFinite(score)) return { label: "אין נתונים", cls: "mid" };
+    if (score >= 51) return { label: "טובה", cls: "good" };
+    if (score >= 0) return { label: "בינונית", cls: "mid" };
+    if (score >= -200) return { label: "נמוכה", cls: "low" };
+    return { label: "נמוכה מאוד", cls: "bad" };
+  }
+
+  normalizeDirectAqiScore(value) {
+    if (!Number.isFinite(value)) return null;
+
+    // Official Israel AQI is -400..100. Some APIs expose the internal 0..500
+    // AQI sub-index instead, so normalize both representations for display.
+    if (value > 100 && value <= 500) return 100 - value;
+    return Math.max(-400, Math.min(100, Math.round(value)));
+  }
+
+  gaugeScoreForIsraelAqi(score) {
+    if (!Number.isFinite(score)) return 0;
+    return Math.max(0, Math.min(500, 100 - score));
+  }
+
+  israelAqiBreakpoints(key) {
+    const bp = (iLo, iHi, bpLo, bpHi) => ({ iLo, iHi, bpLo, bpHi });
+    return {
+      pm25: [bp(0, 49, 0, 18.5), bp(50, 100, 18.6, 37), bp(101, 200, 37.5, 84), bp(201, 300, 84.5, 130), bp(301, 400, 130.5, 165), bp(401, 500, 165.5, 200)],
+      pm2_5: [bp(0, 49, 0, 18.5), bp(50, 100, 18.6, 37), bp(101, 200, 37.5, 84), bp(201, 300, 84.5, 130), bp(301, 400, 130.5, 165), bp(401, 500, 165.5, 200)],
+      pm10: [bp(0, 49, 0, 65), bp(50, 100, 66, 129), bp(101, 200, 130, 215), bp(201, 300, 216, 300), bp(301, 400, 301, 355), bp(401, 500, 356, 430)],
+      so2: [bp(0, 49, 0, 67), bp(50, 100, 68, 133), bp(101, 200, 134, 163), bp(201, 300, 164, 191), bp(301, 400, 192, 253), bp(401, 500, 254, 303)],
+      no2: [bp(0, 49, 0, 53), bp(50, 100, 54, 105), bp(101, 200, 106, 160), bp(201, 300, 161, 213), bp(301, 400, 214, 260), bp(401, 500, 261, 316)],
+      o3: [bp(0, 49, 0, 35), bp(50, 100, 36, 70), bp(101, 200, 71, 97), bp(201, 300, 98, 117), bp(301, 400, 118, 155), bp(401, 500, 156, 188)],
+      co: [bp(0, 49, 0, 26), bp(50, 100, 27, 51), bp(101, 200, 52, 78), bp(201, 300, 79, 104), bp(301, 400, 105, 130), bp(401, 500, 131, 156)],
+      nox: [bp(0, 49, 0, 250), bp(50, 100, 251, 499), bp(101, 200, 500, 750), bp(201, 300, 751, 1000), bp(301, 400, 1001, 1200), bp(401, 500, 1201, 1400)],
+    }[this.normalizeSuffix(key)] || null;
+  }
+
+  normalizeUnit(unit) {
+    return String(unit || "")
+      .toLowerCase()
+      .replace(/μ/g, "µ")
+      .replace(/\s+/g, "")
+      .replace("³", "3");
+  }
+
+  molecularWeight(key) {
+    return {
+      co: 28.01,
+      no2: 46.0055,
+      nox: 46.0055,
+      o3: 48,
+      so2: 64.066,
+    }[this.normalizeSuffix(key)] || null;
+  }
+
+  israelAqiUnit(key) {
+    return {
+      pm10: "ug/m3",
+      pm25: "ug/m3",
+      pm2_5: "ug/m3",
+      co: "ppm",
+      no2: "ppb",
+      nox: "ppb",
+      o3: "ppb",
+      so2: "ppb",
+    }[this.normalizeSuffix(key)] || "";
+  }
+
+  concentrationForIsraelAqi(value, item) {
+    if (!Number.isFinite(value)) return null;
+
+    const key = this.normalizeSuffix(item.key);
+    const unit = this.normalizeUnit(item.unit);
+    const mw = this.molecularWeight(key);
+    const targetUnit = this.israelAqiUnit(key);
+
+    if (key === "pm10" || key === "pm25" || key === "pm2_5") return Math.max(0, value);
+    if (targetUnit === "ppm") {
+      if (unit === "ppm") return Math.max(0, value);
+      if (unit === "ppb") return Math.max(0, value / 1000);
+      if (unit === "mg/m3") return mw ? Math.max(0, (value * 24.45) / mw) : Math.max(0, value);
+      if (unit === "µg/m3" || unit === "ug/m3" || unit === "mcg/m3") return mw ? Math.max(0, (value * 24.45) / (mw * 1000)) : Math.max(0, value);
+    }
+
+    if (unit === "ppb") return Math.max(0, value);
+    if (unit === "ppm") return Math.max(0, value * 1000);
+    if (unit === "mg/m3") return mw ? Math.max(0, (value * 1000 * 24.45) / mw) : Math.max(0, value);
+    if (unit === "µg/m3" || unit === "ug/m3" || unit === "mcg/m3") return mw ? Math.max(0, (value * 24.45) / mw) : Math.max(0, value);
+
+    return Math.max(0, value);
+  }
+
   extraSensorMeta(suffix) {
     const key = this.normalizeSuffix(suffix);
     return {
-      pm25: { name: "PM2.5", desc: "חלקיקים עדינים", category: "pollutant", kind: "green", unit: "µg/m³", good: 25, mid: 50, low: 100, bad: 250 },
-      pm2_5: { name: "PM2.5", desc: "חלקיקים עדינים", category: "pollutant", kind: "green", unit: "µg/m³", good: 25, mid: 50, low: 100, bad: 250 },
-      co: { name: "CO", desc: "פחמן חד־חמצני", category: "pollutant", kind: "gray", unit: "ppm", good: 4, mid: 9, low: 15, bad: 30 },
+      pm25: { name: "PM2.5", desc: "חלקיקים עדינים", category: "pollutant", kind: "green", unit: "µg/m³" },
+      pm2_5: { name: "PM2.5", desc: "חלקיקים עדינים", category: "pollutant", kind: "green", unit: "µg/m³" },
+      co: { name: "CO", desc: "פחמן חד־חמצני", category: "pollutant", kind: "gray", unit: "ppm" },
       ws: { name: "WS", desc: "מהירות רוח", category: "weather", kind: "blue" },
       wds: { name: "WS", desc: "מהירות רוח", category: "weather", kind: "blue" },
       wd: { name: "WD", desc: "כיוון רוח", category: "weather", kind: "blue", unit: "°" },
@@ -591,14 +730,14 @@ class AirSvivaDashboardCard extends HTMLElement {
     const coEntity = this.firstExistingEntity(hass, [e.co]);
 
     return [
-      { key: "pm10", name: "PM10", desc: "חלקיקים נשימים", entity: e.pm10, unit: "µg/m³", good: 50, mid: 100, low: 200, bad: 400, kind: "green" },
-      { key: "pm25", name: "PM2.5", desc: "חלקיקים עדינים", entity: pm25Entity, unit: "µg/m³", good: 25, mid: 50, low: 100, bad: 250, kind: "green" },
-      { key: "o3", name: "O₃", desc: "אוזון", entity: e.o3, unit: "µg/m³", good: 100, mid: 180, low: 240, bad: 400, kind: "blue" },
-      { key: "so2", name: "SO₂", desc: "גופרית דו־חמצנית", entity: e.so2, unit: "µg/m³", good: 20, mid: 80, low: 250, bad: 400, kind: "yellow" },
-      { key: "no2", name: "NO₂", desc: "חנקן דו־חמצני", entity: e.no2, unit: "µg/m³", good: 40, mid: 100, low: 200, bad: 400, kind: "red" },
-      { key: "nox", name: "NOₓ", desc: "תחמוצות חנקן", entity: e.nox, unit: "µg/m³", good: 40, mid: 100, low: 200, bad: 400, kind: "red" },
-      { key: "no", name: "NO", desc: "חנקן חד־חמצני", entity: e.no, unit: "µg/m³", good: 40, mid: 100, low: 200, bad: 400, kind: "gray" },
-      { key: "co", name: "CO", desc: "פחמן חד־חמצני", entity: coEntity, unit: this.unitForEntity(hass, coEntity, "ppm"), good: 4, mid: 9, low: 15, bad: 30, kind: "gray" },
+      { key: "pm10", name: "PM10", desc: "חלקיקים נשימים", entity: e.pm10, unit: this.unitForEntity(hass, e.pm10, "µg/m³"), kind: "green" },
+      { key: "pm25", name: "PM2.5", desc: "חלקיקים עדינים", entity: pm25Entity, unit: this.unitForEntity(hass, pm25Entity, "µg/m³"), kind: "green" },
+      { key: "o3", name: "O₃", desc: "אוזון", entity: e.o3, unit: this.unitForEntity(hass, e.o3, "ppb"), kind: "blue" },
+      { key: "so2", name: "SO₂", desc: "גופרית דו־חמצנית", entity: e.so2, unit: this.unitForEntity(hass, e.so2, "ppb"), kind: "yellow" },
+      { key: "no2", name: "NO₂", desc: "חנקן דו־חמצני", entity: e.no2, unit: this.unitForEntity(hass, e.no2, "ppb"), kind: "red" },
+      { key: "nox", name: "NOₓ", desc: "תחמוצות חנקן", entity: e.nox, unit: this.unitForEntity(hass, e.nox, "ppb"), kind: "red" },
+      { key: "no", name: "NO", desc: "חנקן חד־חמצני", entity: e.no, unit: this.unitForEntity(hass, e.no, "ppb"), kind: "gray" },
+      { key: "co", name: "CO", desc: "פחמן חד־חמצני", entity: coEntity, unit: this.unitForEntity(hass, coEntity, "ppm"), kind: "gray" },
     ];
   }
 
@@ -654,10 +793,6 @@ class AirSvivaDashboardCard extends HTMLElement {
           entity: entityId,
           unit,
           kind: meta?.kind || "gray",
-          good: meta?.good ?? 50,
-          mid: meta?.mid ?? 100,
-          low: meta?.low ?? 200,
-          bad: meta?.bad ?? 400,
         });
       }
     });
@@ -700,45 +835,71 @@ class AirSvivaDashboardCard extends HTMLElement {
   scoreForItem(value, item) {
     if (!Number.isFinite(value)) return null;
 
-    if (value <= item.good) return (value / Math.max(item.good, 1)) * 50;
-    if (value <= item.mid) return 51 + ((value - item.good) / Math.max(item.mid - item.good, 1)) * 49;
-    if (value <= item.low) return 101 + ((value - item.mid) / Math.max(item.low - item.mid, 1)) * 99;
-    if (value <= item.bad) return 201 + ((value - item.low) / Math.max(item.bad - item.low, 1)) * 199;
-    return 400;
+    const breakpoints = this.israelAqiBreakpoints(item.key);
+    const concentration = this.concentrationForIsraelAqi(value, item);
+    if (!breakpoints || concentration === null) return null;
+
+    const band = breakpoints.find((row) => concentration <= row.bpHi) || breakpoints[breakpoints.length - 1];
+    const ratio = (concentration - band.bpLo) / Math.max(band.bpHi - band.bpLo, 1);
+    const score = band.iLo + (band.iHi - band.iLo) * ratio;
+    return Math.max(0, Math.min(500, score));
   }
 
-  calcAqi(hass, e) {
+  calcPollutantAqi(hass, e) {
     let worst = null;
 
     this.metricItems(hass, e, this.detectPrefix(hass)).forEach((item) => {
       const value = this.num(hass, item.entity);
       if (value === null) return;
       const score = this.scoreForItem(value, item);
+      if (score === null) return;
       if (!worst || score > worst.score) {
         worst = { score, key: item.key, item };
       }
     });
 
-    if (!worst) return { score: 0, label: "אין נתונים", cls: "mid", pollutant: "—" };
+    if (!worst) return { score: "—", gaugeScore: 0, label: "אין נתונים", cls: "mid", pollutant: "—" };
 
-    const score = Math.round(Math.max(0, Math.min(400, worst.score)));
+    const subIndex = Math.round(Math.max(0, Math.min(500, worst.score)));
+    const score = 100 - subIndex;
+    const gaugeScore = this.gaugeScoreForIsraelAqi(score);
+    const { label, cls } = this.labelForIsraelAqi(score);
 
-    if (score <= 50) return { score, label: "טובה", cls: "good", pollutant: worst.key };
-    if (score <= 100) return { score, label: "בינונית", cls: "mid", pollutant: worst.key };
-    if (score <= 200) return { score, label: "נמוכה", cls: "low", pollutant: worst.key };
-    return { score, label: "נמוכה מאוד", cls: "bad", pollutant: worst.key };
+    return { score, gaugeScore, label, cls, pollutant: worst.key, source: "calculated" };
+  }
+
+  calcAqi(hass, e) {
+    const calculated = this.calcPollutantAqi(hass, e);
+    const directEntity = this.directAqiEntity(hass, e);
+    const directValue = this.num(hass, directEntity);
+    const directScore = this.normalizeDirectAqiScore(directValue);
+
+    if (directScore !== null) {
+      const { label, cls } = this.labelForIsraelAqi(directScore);
+      return {
+        score: directScore,
+        gaugeScore: this.gaugeScoreForIsraelAqi(directScore),
+        label,
+        cls,
+        pollutant: calculated.pollutant !== "—" ? calculated.pollutant : "official_aqi",
+        source: "official",
+        entity: directEntity,
+      };
+    }
+
+    return calculated;
   }
 
   needleAngleForScore(score) {
-    const s = Math.max(0, Math.min(400, Number(score) || 0));
+    const s = Math.max(0, Math.min(500, Number(score) || 0));
 
     // Interpolate by the exact gauge ticks shown in the UI.
     const anchors = [
       { score: 0, angle: 0 },
-      { score: 51, angle: -40 },
-      { score: 100, angle: -68 },
-      { score: 200, angle: -102 },
-      { score: 400, angle: -180 },
+      { score: 49, angle: -18 },
+      { score: 100, angle: -36 },
+      { score: 300, angle: -108 },
+      { score: 500, angle: -180 },
     ];
 
     for (let i = 0; i < anchors.length - 1; i += 1) {
@@ -756,7 +917,8 @@ class AirSvivaDashboardCard extends HTMLElement {
   percentForItem(value, item) {
     if (!Number.isFinite(value)) return 0;
     const score = this.scoreForItem(value, item);
-    return Math.max(0, Math.min(100, score / 4));
+    if (score === null) return 0;
+    return Math.max(0, Math.min(100, score / 5));
   }
 
   metricHtml(hass, item) {
@@ -819,10 +981,10 @@ class AirSvivaDashboardCard extends HTMLElement {
     return `
       <div class="legend-table">
         <div class="legend-row head"><span>רמה</span><span>טווח</span><span>צבע</span></div>
-        <div class="legend-row"><b>טובה</b><span class="legend-range">0 - 50</span><i class="legend-band good"></i></div>
-        <div class="legend-row"><b>בינונית</b><span class="legend-range">51 - 100</span><i class="legend-band mid"></i></div>
-        <div class="legend-row"><b>נמוכה</b><span class="legend-range">101 - 200</span><i class="legend-band low"></i></div>
-        <div class="legend-row"><b>נמוכה מאוד</b><span class="legend-range">201 - 400</span><i class="legend-band bad"></i></div>
+        <div class="legend-row"><b>טובה</b><span class="legend-range">51 - 100</span><i class="legend-band good"></i></div>
+        <div class="legend-row"><b>בינונית</b><span class="legend-range">0 - 50</span><i class="legend-band mid"></i></div>
+        <div class="legend-row"><b>נמוכה</b><span class="legend-range">-1 - -200</span><i class="legend-band low"></i></div>
+        <div class="legend-row"><b>נמוכה מאוד</b><span class="legend-range">-201 - -400</span><i class="legend-band bad"></i></div>
       </div>
     `;
   }
@@ -890,10 +1052,13 @@ class AirSvivaDashboardCard extends HTMLElement {
     const dominantItem = allMetricItems.find((item) => item.key === aqi.pollutant) || null;
     const dominantLabel = dominantItem ? dominantItem.name : "—";
     const dominantValue = dominantItem ? this.value(hass, dominantItem.entity) : "—";
+    const gaugeSubtitle = aqi.source === "official"
+      ? (dominantItem ? `מדד רשמי: ${aqi.score} · מזהם דומיננטי מחושב: ${dominantLabel} ${dominantValue}` : `מדד רשמי: ${aqi.score}`)
+      : `מבוסס על ${dominantLabel}: ${dominantValue}`;
     const stationId = this.stationIdFromPrefix(prefix);
     const stationName = this.config.station_name || (stationId ? `תחנת ניטור ${stationId}` : "Air Sviva");
     const updated = new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-    const deg = this.needleAngleForScore(aqi.score);
+    const deg = this.needleAngleForScore(aqi.gaugeScore);
     const maxWidth = this.config.max_width || "2200px";
 
     const pollutantMetrics = allMetricItems.map((item) => this.metricHtml(hass, item)).join("");
@@ -1233,10 +1398,10 @@ class AirSvivaDashboardCard extends HTMLElement {
           border-radius:50%;
           background:
             conic-gradient(from 270deg,
-              #cf4c43 0deg 72deg,
-              #ec8c31 72deg 112deg,
-              #f0d24c 112deg 138deg,
-              #66b866 138deg 180deg,
+              #984806 0deg 72deg,
+              #e22f2f 72deg 144deg,
+              #f0d24c 144deg 162deg,
+              #66b866 162deg 180deg,
               transparent 180deg 360deg);
           -webkit-mask:radial-gradient(circle,transparent 0 58%,#000 59% 71%,transparent 72%);
           mask:radial-gradient(circle,transparent 0 58%,#000 59% 71%,transparent 72%);
@@ -1289,7 +1454,7 @@ class AirSvivaDashboardCard extends HTMLElement {
           text-align:center;
           z-index:5;
           pointer-events:none;
-          color:${aqi.cls === "good" ? "#47985a" : aqi.cls === "mid" ? "#b89821" : aqi.cls === "low" ? "#d8762c" : "#c54842"};
+          color:${aqi.cls === "good" ? "#47985a" : aqi.cls === "mid" ? "#b89821" : aqi.cls === "low" ? "#c54842" : "#984806"};
         }
 
         .gauge-num strong {
@@ -1364,8 +1529,8 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         .legend-band.good { background:linear-gradient(90deg,#4ea85a,#7dcf72); }
         .legend-band.mid { background:linear-gradient(90deg,#c8ad31,#f0d24c); }
-        .legend-band.low { background:linear-gradient(90deg,#d67a2f,#f1a14b); }
-        .legend-band.bad { background:linear-gradient(90deg,#b9443c,#e06158); }
+        .legend-band.low { background:linear-gradient(90deg,#d92222,#ff4f4f); }
+        .legend-band.bad { background:linear-gradient(90deg,#7e3608,#984806); }
 
         .scene {
           margin-top:20px;
@@ -1666,13 +1831,13 @@ class AirSvivaDashboardCard extends HTMLElement {
           border-radius:999px;
           background:linear-gradient(90deg,
             #66b866 0%,
-            #66b866 12.5%,
-            #f0d24c 12.5%,
-            #f0d24c 25%,
-            #ec8c31 25%,
-            #ec8c31 50%,
-            #cf4c43 50%,
-            #cf4c43 100%);
+            #66b866 10%,
+            #f0d24c 10%,
+            #f0d24c 20%,
+            #e22f2f 20%,
+            #e22f2f 60%,
+            #984806 60%,
+            #984806 100%);
           position:relative;
           box-shadow:inset 0 1px 0 rgba(255,255,255,.8), inset 4px 4px 10px rgba(95,115,135,.14);
           direction:ltr;
@@ -1986,8 +2151,8 @@ class AirSvivaDashboardCard extends HTMLElement {
               <section class="intro">
                 <h1>${this.config.title}</h1>
                 <p>
-                  ${stationName} — מדד איכות האוויר מחושב לפי המזהם המשפיע ביותר בתחנה.
-                  המדד משקלל את המזהמים הנמדדים ומציג את רמת איכות האוויר הנוכחית.
+                  ${stationName} — מדד איכות האוויר מחושב לפי נוסחת AQI ישראלית ולפי המזהם המשפיע ביותר בתחנה.
+                  המדד משווה תת־מדד לכל מזהם נמדד ומציג את רמת איכות האוויר הנוכחית.
                 </p>
               </section>
 
@@ -2017,7 +2182,7 @@ class AirSvivaDashboardCard extends HTMLElement {
               <section>
                 <div class="gauge-panel panel">
                   <div class="gauge-title">מקרא של רמת איכות האוויר</div>
-                  <div class="gauge-subtitle">מבוסס על ${dominantLabel}: ${dominantValue}</div>
+                  <div class="gauge-subtitle">${gaugeSubtitle}</div>
 
                   <div class="gauge-wrap">
                     <div class="gauge">
@@ -2028,11 +2193,11 @@ class AirSvivaDashboardCard extends HTMLElement {
                         <strong>${aqi.score}</strong>
                         <span>${aqi.label}</span>
                       </div>
-                      <span class="tick t0">0</span>
+                      <span class="tick t0">100</span>
                       <span class="tick t51">51</span>
-                      <span class="tick t100">100</span>
-                      <span class="tick t200">200</span>
-                      <span class="tick t400">400</span>
+                      <span class="tick t100">0</span>
+                      <span class="tick t200">-200</span>
+                      <span class="tick t400">-400</span>
                     </div>
                   </div>
 
@@ -2055,7 +2220,7 @@ class AirSvivaDashboardCard extends HTMLElement {
 
             ${this.config.show_footer === false ? "" : `
               <footer class="footer">
-                מדד איכות האוויר מחושב עבור כל תחנת ניטור בנפרד ונקבע על פי המזהם שריכוזו הוא הגבוה ביותר.
+                מדד איכות האוויר מחושב עבור כל תחנת ניטור בנפרד ונקבע על פי המזהם שתת־המדד שלו הוא הגבוה ביותר.
               </footer>
             `}
           </main>

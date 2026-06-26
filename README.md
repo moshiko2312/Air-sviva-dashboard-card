@@ -13,13 +13,17 @@ Custom Home Assistant Lovelace card for displaying Air Sviva station data in a r
 
 ## Features
 
-- AQI gauge with dominant pollutant logic
+- Israel AQI gauge using pollutant breakpoints and dominant pollutant logic
 - Pollutant metric cards (PM10, O3, SO2, NO2, NOX, NO)
 - Weather cards (temperature, humidity, rain)
 - Scene section with dynamic dominant pollutant display
 - Navigation buttons (custom path + back button)
 - Auto-detection of sensor prefix (`sensor.sviva_station_<id>_*`)
 - RTL/Hebrew-friendly layout
+
+## AQI Calculation
+
+The card first looks for an official station AQI/index sensor from the integration. If one is found, that value is used for the main gauge. If no official AQI sensor is available, each supported pollutant is converted to a pollutant sub-index with pollutant-specific breakpoints, the highest sub-index is selected, and the displayed Israeli AQI is calculated as `100 - subIndex`.
 
 ## Installation
 
@@ -47,6 +51,7 @@ show_footer: true
 - `title`: Card title
 - `station_name`: Optional station display name
 - `entity_prefix`: Manual entity prefix (example: `sensor.sviva_station_32`)
+- `aqi_entity`: Optional explicit official AQI/index sensor
 - `station_id`: Station ID for automatic prefix creation
 - `max_width`: Max dashboard width (example: `2200px`)
 - `full_height`: Full-height mode

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
+## [Unreleased]
+
+### Changed
+- Updated AQI calculation to use the Israeli AQI breakpoint formula and final `100 - subIndex` score.
+- Updated AQI legend ranges and gauge ticks to match the Israeli AQI scale.
+- Prefer an official integration AQI/index sensor for the main gauge when available, with pollutant calculation as fallback.
+- Treat Air Sviva sentinel values (`-9999`, `9999`) as unavailable readings.
+
 ## [1.1.0] - 2026-06-24
 
 ### Added
