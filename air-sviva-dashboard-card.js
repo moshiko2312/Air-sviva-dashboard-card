@@ -6,6 +6,30 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
     this._hass = hass;
     if (!this._renderedOnce) return;
     this.populateRouteSelects();
+    this.populateAqiEntitySelect();
+  }
+
+  discoveredAqiEntities() {
+    const hass = this._hass;
+    const directAqiSuffixPattern = /_(air_quality_index|general_index|israel_aqi|aqi_israel|air_quality|index|aqi)$/i;
+    const stationId = this.config?.station_id;
+    const stationPrefix = stationId !== "" && stationId !== undefined && stationId !== null
+      ? `sensor.sviva_station_${stationId}`
+      : "";
+
+    const candidates = Object.keys(hass?.states || {})
+      .filter((entityId) => entityId.startsWith("sensor.") && directAqiSuffixPattern.test(entityId))
+      .sort((a, b) => {
+        const aPreferred = stationPrefix && a.startsWith(`${stationPrefix}_`) ? 1 : 0;
+        const bPreferred = stationPrefix && b.startsWith(`${stationPrefix}_`) ? 1 : 0;
+        if (aPreferred !== bPreferred) return bPreferred - aPreferred;
+        return a.localeCompare(b);
+      });
+
+    return candidates.map((entityId) => {
+      const friendly = hass?.states?.[entityId]?.attributes?.friendly_name;
+      return { path: entityId, label: friendly ? `${friendly}` : entityId };
+    });
   }
 
   discoveredRoutes() {
@@ -68,6 +92,21 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
     });
   }
 
+  populateAqiEntitySelect() {
+    if (!this.shadowRoot) return;
+    const options = this.discoveredAqiEntities();
+    const select = this.shadowRoot.querySelector('select[data-aqi-select="true"]');
+    if (!select) return;
+
+    const current = this.config?.aqi_entity || "";
+    select.innerHTML = [
+      `<option value="">ללא (חישוב אוטומטי)</option>`,
+      ...options.map((entity) =>
+        `<option value="${entity.path}" ${entity.path === current ? "selected" : ""}>${entity.label} — ${entity.path}</option>`
+      )
+    ].join("");
+  }
+
   setConfig(config) {
     const merged = {
       title: "רמת איכות אוויר",
@@ -103,6 +142,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
     // Avoid full re-render after first paint to preserve caret/focus.
     this.syncFormWithConfig();
     this.populateRouteSelects();
+    this.populateAqiEntitySelect();
   }
 
   configChanged(config) {
@@ -151,6 +191,13 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
 
       const nextValue = this.config?.[key] ?? "";
       if (String(input.value) !== String(nextValue)) input.value = nextValue;
+    });
+
+    this.shadowRoot.querySelectorAll("select[data-key]").forEach((select) => {
+      const key = select.dataset.key;
+      if (!key) return;
+      const nextValue = this.config?.[key] ?? "";
+      if (String(select.value) !== String(nextValue)) select.value = nextValue;
     });
   }
 
@@ -319,6 +366,11 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
           </label>
 
           <label>
+            <span>בחר חיישן מדד רשמי מהרשימה</span>
+            <select data-key="aqi_entity" data-aqi-select="true"></select>
+          </label>
+
+          <label>
             <span>רוחב מקסימלי</span>
             <input data-key="max_width" value="${c.max_width ?? "1420px"}" placeholder="1420px / 100%">
           </label>
@@ -419,6 +471,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
 
     this._renderedOnce = true;
     if (this.populateRouteSelects) this.populateRouteSelects();
+    if (this.populateAqiEntitySelect) this.populateAqiEntitySelect();
   }
 }
 
