@@ -115,6 +115,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
       aqi_entity: "",
       station_id: "",
       full_height: true,
+      full_bleed: true,
       show_scene: true,
       show_footer: true,
       show_legend: true,
@@ -126,7 +127,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
       show_back_button: true,
       back_button_label: "חזרה",
       back_button_path: "",
-      max_width: "2200px",
+      max_width: "2400px",
       ...config,
     };
 
@@ -155,7 +156,7 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
 
   updateValue(key, value, shouldRender = false) {
     const next = { ...this.config };
-    if (["full_height", "show_scene", "show_footer", "show_legend", "show_weather", "show_extra_pollutants", "show_extra_weather"].includes(key)) {
+    if (["full_height", "full_bleed", "show_scene", "show_footer", "show_legend", "show_weather", "show_extra_pollutants", "show_extra_weather"].includes(key)) {
       next[key] = value;
     } else if (key === "station_id") {
       if (value === "") delete next.station_id;
@@ -418,6 +419,11 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
           </label>
 
           <label class="toggle">
+            <span>רוחב מסך מלא</span>
+            <input data-key="full_bleed" type="checkbox" ${c.full_bleed !== false ? "checked" : ""}>
+          </label>
+
+          <label class="toggle">
             <span>הצג איור תחתון</span>
             <input data-key="show_scene" type="checkbox" ${c.show_scene !== false ? "checked" : ""}>
           </label>
@@ -478,6 +484,11 @@ class AirSvivaDashboardCardEditor extends HTMLElement {
 customElements.define("air-sviva-dashboard-card-editor", AirSvivaDashboardCardEditor);
 
 class AirSvivaDashboardCard extends HTMLElement {
+  constructor() {
+    super();
+    this._collapsedRows = new Set();
+  }
+
   static getConfigElement() {
     return document.createElement("air-sviva-dashboard-card-editor");
   }
@@ -486,6 +497,7 @@ class AirSvivaDashboardCard extends HTMLElement {
     return {
       title: "רמת איכות אוויר",
       full_height: true,
+      full_bleed: true,
     };
   }
 
@@ -497,6 +509,7 @@ class AirSvivaDashboardCard extends HTMLElement {
       aqi_entity: "",
       station_id: "",
       full_height: true,
+      full_bleed: true,
       show_scene: true,
       show_footer: true,
       show_legend: true,
@@ -508,7 +521,7 @@ class AirSvivaDashboardCard extends HTMLElement {
       show_back_button: true,
       back_button_label: "חזרה",
       back_button_path: "",
-      max_width: "2200px",
+      max_width: "2400px",
       ...config,
     };
 
@@ -974,13 +987,69 @@ class AirSvivaDashboardCard extends HTMLElement {
     return Math.max(0, Math.min(100, score / 5));
   }
 
-  metricHtml(hass, item) {
+  metricRows(items, wideKeys = new Set()) {
+    const rows = [];
+    let current = [];
+
+    const flushCurrent = () => {
+      if (!current.length) return;
+      if (current.length === 1) current[0] = { ...current[0], solo: true };
+      rows.push(current);
+      current = [];
+    };
+
+    (items || []).forEach((item) => {
+      const isWide = wideKeys.has(item.key);
+      if (isWide) {
+        flushCurrent();
+        rows.push([{ ...item, full: true }]);
+        return;
+      }
+
+      current.push(item);
+      if (current.length === 2) flushCurrent();
+    });
+
+    flushCurrent();
+    return rows;
+  }
+
+  rowKey(section, row) {
+    return `${section}:${row.map((item) => item.key).join("|")}`;
+  }
+
+  rowHeaderLabel(row) {
+    return row.map((item) => item.name).join(" · ");
+  }
+
+  renderMetricRows(hass, section, rows, renderer) {
+    return rows.map((row) => {
+      const key = this.rowKey(section, row);
+      const collapsed = this._collapsedRows.has(key);
+      const countLabel = row.length === 1 ? "פריט 1" : `${row.length} פריטים`;
+
+      return `
+        <section class="metrics-row ${collapsed ? "collapsed" : ""}" data-row-key="${key}">
+          <button class="section-toggle" type="button" data-row-toggle="${key}" aria-expanded="${collapsed ? "false" : "true"}">
+            <span class="section-toggle-text">${this.rowHeaderLabel(row)}</span>
+            <span class="section-toggle-meta">${countLabel}</span>
+            <span class="section-toggle-icon">⌄</span>
+          </button>
+          <div class="metrics-row-grid metrics">
+            ${row.map((item) => renderer.call(this, hass, item, `${item.full ? "metric-full" : ""} ${item.solo ? "metric-solo" : ""}`.trim())).join("")}
+          </div>
+        </section>
+      `;
+    }).join("");
+  }
+
+  metricHtml(hass, item, layoutClass = "") {
     const value = this.value(hass, item.entity);
     const raw = this.num(hass, item.entity);
     const pct = this.percentForItem(raw, item);
 
     return `
-      <article class="metric ${item.kind}">
+      <article class="metric ${item.kind} ${layoutClass}">
         <div class="metric-readout">
           <div class="metric-number">
             <strong>${value}</strong>
@@ -1003,11 +1072,11 @@ class AirSvivaDashboardCard extends HTMLElement {
     `;
   }
 
-  weatherHtml(hass, item) {
+  weatherHtml(hass, item, layoutClass = "") {
     const value = this.value(hass, item.entity);
 
     return `
-      <article class="metric weather ${item.kind} ${item.key === "rain" ? "weather-wide" : ""}">
+      <article class="metric weather ${item.kind} ${layoutClass}">
         <div class="metric-readout">
           <div class="metric-number">
             <strong>${value}</strong>
@@ -1112,15 +1181,21 @@ class AirSvivaDashboardCard extends HTMLElement {
     const stationName = this.config.station_name || (stationId ? `תחנת ניטור ${stationId}` : "Air Sviva");
     const updated = new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
     const deg = this.needleAngleForScore(aqi.gaugeScore);
-    const maxWidth = this.config.max_width || "2200px";
+    const maxWidth = this.config.max_width || "2400px";
+    const fullBleed = this.config.full_bleed !== false;
 
-    const pollutantMetrics = allMetricItems.map((item) => this.metricHtml(hass, item)).join("");
-    const weatherMetrics = this.config.show_weather === false ? "" : allWeatherItems.map((item) => this.weatherHtml(hass, item)).join("");
+    const pollutantRows = this.metricRows(allMetricItems);
+    const weatherRows = this.metricRows(allWeatherItems);
+    const pollutantMetrics = this.renderMetricRows(hass, "pollutants", pollutantRows, this.metricHtml);
+    const weatherMetrics = this.config.show_weather === false ? "" : this.renderMetricRows(hass, "weather", weatherRows, this.weatherHtml);
 
     this.shadowRoot.innerHTML = `
       <style>
         :host {
           display:block;
+          width:${fullBleed ? "100vw" : "100%"};
+          max-width:${fullBleed ? "100vw" : "100%"};
+          margin-inline:${fullBleed ? "calc(50% - 50vw)" : "0"};
           direction:rtl;
           --air-ink:#18304b;
           --air-muted:#5e6c7c;
@@ -1145,7 +1220,7 @@ class AirSvivaDashboardCard extends HTMLElement {
           min-height:${this.config.full_height === false ? "auto" : "calc(100vh - 48px)"};
           display:grid;
           place-items:center;
-          padding:26px;
+          padding:clamp(12px, 1.6vw, 24px);
           position:relative;
           overflow:hidden;
           background:
@@ -1184,7 +1259,7 @@ class AirSvivaDashboardCard extends HTMLElement {
           width:100%; max-width:${maxWidth};
           min-height:720px;
           border-radius:38px;
-          padding:clamp(18px, 2.2vw, 34px);
+          padding:clamp(16px, 1.7vw, 28px);
           position:relative;
           overflow:hidden;
           background:
@@ -1211,9 +1286,9 @@ class AirSvivaDashboardCard extends HTMLElement {
           display:grid;
           grid-template-columns:minmax(92px, 124px) minmax(0, 1fr) minmax(170px, 218px);
           grid-template-areas:"logo intro refresh";
-          gap:24px;
+          gap:20px;
           align-items:center;
-          margin-bottom:24px;
+          margin-bottom:20px;
           position:relative;
           z-index:2;
         }
@@ -1358,8 +1433,8 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         .main {
           display:grid;
-          grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);
-          gap:30px;
+          grid-template-columns:minmax(320px, .9fr) minmax(0, 1.2fr);
+          gap:22px;
           position:relative;
           z-index:2;
         }
@@ -1421,7 +1496,7 @@ class AirSvivaDashboardCard extends HTMLElement {
 
         .gauge {
           position:relative;
-          width:min(100%,620px);
+          width:min(100%,560px);
           height:340px;
           overflow:visible;
           margin-top:0;
@@ -1432,8 +1507,8 @@ class AirSvivaDashboardCard extends HTMLElement {
           position:absolute;
           left:50%;
           bottom:-236px;
-          width:min(100%,620px);
-          height:620px;
+          width:min(100%,560px);
+          height:560px;
           transform:translateX(-50%);
           border-radius:50%;
           background:conic-gradient(from 270deg, rgba(153,171,188,.22) 0deg 180deg, transparent 180deg 360deg);
@@ -1445,8 +1520,8 @@ class AirSvivaDashboardCard extends HTMLElement {
           position:absolute;
           left:50%;
           bottom:-236px;
-          width:min(100%,620px);
-          height:620px;
+          width:min(100%,560px);
+          height:560px;
           transform:translateX(-50%);
           border-radius:50%;
           background:
@@ -1706,14 +1781,87 @@ class AirSvivaDashboardCard extends HTMLElement {
           color:#253e5b;
         }
 
+        .metrics-row + .metrics-row {
+          margin-top:12px;
+        }
+
+        .section-toggle {
+          width:100%;
+          display:grid;
+          grid-template-columns:minmax(0,1fr) auto auto;
+          gap:10px;
+          align-items:center;
+          border:0;
+          cursor:pointer;
+          padding:10px 14px;
+          margin:0 0 10px;
+          border-radius:16px;
+          color:#24405d;
+          background:linear-gradient(160deg, rgba(255,255,255,.86), rgba(220,232,242,.76));
+          box-shadow:0 8px 16px rgba(95,115,135,.12), inset 0 1px 0 rgba(255,255,255,.9);
+          font-family:inherit;
+          text-align:right;
+        }
+
+        .section-toggle-text {
+          min-width:0;
+          font-size:15px;
+          font-weight:860;
+          white-space:nowrap;
+          overflow:hidden;
+          text-overflow:ellipsis;
+        }
+
+        .section-toggle-meta {
+          color:#5d7185;
+          font-size:12px;
+          font-weight:760;
+          background:rgba(255,255,255,.68);
+          border:1px solid rgba(255,255,255,.78);
+          border-radius:999px;
+          padding:3px 8px;
+          white-space:nowrap;
+        }
+
+        .section-toggle-icon {
+          font-size:18px;
+          font-weight:900;
+          line-height:1;
+          transition:transform .18s ease;
+        }
+
+        .metrics-row.collapsed .section-toggle-icon {
+          transform:rotate(180deg);
+        }
+
+        .metrics-stack {
+          display:grid;
+          gap:12px;
+        }
+
         .metrics {
           display:grid;
           grid-template-columns:repeat(2, minmax(0, 1fr));
           gap:14px;
         }
 
+        .metrics > .metric.metric-solo,
+        .metrics > .metric.metric-full,
         .metrics > .metric:last-child:nth-child(odd) {
           grid-column:1 / -1;
+        }
+
+        .metrics-row-grid {
+          overflow:hidden;
+          max-height:1200px;
+          opacity:1;
+          transition:max-height .24s ease, opacity .2s ease, margin .2s ease;
+        }
+
+        .metrics-row.collapsed .metrics-row-grid {
+          max-height:0;
+          opacity:0;
+          margin-top:-2px;
         }
 
         .metric {
@@ -2263,11 +2411,11 @@ class AirSvivaDashboardCard extends HTMLElement {
               <section class="pollution-panel panel">
                 <div class="pollution-title">רמת איכות האוויר מחושבת עבור מזהמי האוויר האלה:</div>
 
-                <div class="metrics">
+                <div class="metrics-stack">
                   ${pollutantMetrics}
                 </div>
 
-                ${weatherMetrics ? `<div class="weather-section"><div class="metrics">${weatherMetrics}</div></div>` : ""}
+                ${weatherMetrics ? `<div class="weather-section"><div class="metrics-stack">${weatherMetrics}</div></div>` : ""}
               </section>
             </section>
 
@@ -2284,10 +2432,29 @@ class AirSvivaDashboardCard extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-nav]").forEach((btn) => {
       btn.addEventListener("click", () => this.navigate(btn.dataset.nav));
     });
+
+    this.shadowRoot.querySelectorAll("[data-row-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.rowToggle;
+        const row = this.shadowRoot.querySelector(`[data-row-key="${key}"]`);
+        if (!key || !row) return;
+        const collapsed = row.classList.toggle("collapsed");
+        if (collapsed) this._collapsedRows.add(key);
+        else this._collapsedRows.delete(key);
+        btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      });
+    });
   }
 
   getCardSize() {
     return 12;
+  }
+
+  getGridOptions() {
+    return {
+      columns: "full",
+      min_columns: 12,
+    };
   }
 }
 
